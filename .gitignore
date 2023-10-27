@@ -1,0 +1,7 @@
+dump.json
+config.json
+resources/database.db
+logs
+data
+venv
+.idea
