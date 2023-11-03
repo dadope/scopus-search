@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# main.py
+
 from pprint import pprint
 
 from elsapy.elsclient import ElsClient
