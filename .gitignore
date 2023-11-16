@@ -1,7 +1,9 @@
-dump.json
-config.json
-resources/database.db
-logs
-data
-venv
+scopus_search.egg-info
+tests/resources
 .idea
+build
+logs
+venv
+
+dump.json
+data

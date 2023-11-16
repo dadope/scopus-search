@@ -1,10 +1,5 @@
 import sqlite3
-from pathlib import Path
-
-_res_dir = Path.cwd() / "resources"
-_res_dir.mkdir(exist_ok=True)
-
-DB_PATH = str(_res_dir / "database.db")
+import pandas as pd
 
 _CREATE_AUTHORS_QUERY = """
 create table if not exists authors
@@ -12,8 +7,8 @@ create table if not exists authors
     scopus_id  integer not null
         constraint authors_pk
             primary key,
-    first_name TEXT,
-    last_name  TEXT
+    given_name TEXT,
+    surname  TEXT
 );"""
 
 _CREATE_PAPERS_QUERY = """
@@ -23,7 +18,7 @@ create table if not exists papers
         constraint papers_pk
             primary key,
     title     TEXT,
-    year      integer
+    date      TEXT
 );
 """
 
@@ -40,8 +35,8 @@ create table if not exists written_by
 
 
 class DbManager:
-    def __init__(self):
-        self.conn = sqlite3.connect(DB_PATH)
+    def __init__(self, db_path: str):
+        self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         self._setup_tables()
 
@@ -50,14 +45,14 @@ class DbManager:
         self.cursor.execute(_CREATE_AUTHORS_QUERY)
         self.cursor.execute(_CREATE_WRITTEN_BY_QUERY)
 
-    def insert_author(self, scopus_id: int, first_name: str, last_name: str):
-        self.cursor.execute("insert or replace into authors values (?,?,?)", (scopus_id, first_name, last_name))
+    def insert_author(self, scopus_id: int, given_name: str, surname: str):
+        self.cursor.execute("insert or replace into authors values (?,?,?)", (scopus_id, given_name, surname))
         self.conn.commit()
 
     def insert_written_by(self, author_id: int, paper_id: int):
         self.cursor.execute("insert or replace into written_by values (?,?)", [author_id, paper_id])
         self.conn.commit()
 
-    def insert_paper(self, scopus_id: str, title: str, year: int):
-        self.cursor.execute("insert or replace into papers values (?,?,?)", [scopus_id, title, year])
+    def insert_paper(self, scopus_id: int, title: str, date: str):
+        self.cursor.execute("insert or replace into papers values (?,?,?)", [scopus_id, title, date])
         self.conn.commit()
