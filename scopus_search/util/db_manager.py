@@ -56,3 +56,43 @@ class DbManager:
     def insert_paper(self, scopus_id: int, title: str, date: str):
         self.cursor.execute("insert or replace into papers values (?,?,?)", [scopus_id, title, date])
         self.conn.commit()
+
+    def find_author(self, author_scopus_id: int):
+        return not self.get_author(author_scopus_id=author_scopus_id).empty
+
+    def find_paper(self, paper_scopus_id: int):
+        return self.get_paper(paper_scopus_id).empty
+
+    def get_paper(self, paper_scopus_id: int) -> pd.DataFrame:
+        return pd.read_sql_query(f"select * from papers where scopus_id={paper_scopus_id}", self.conn)
+
+    def get_author(self, author_scopus_id: int = None, given_name: str = None, surname: str = None) -> pd.DataFrame:
+        query = "select * from authors where"
+
+        if author_scopus_id:
+            query += f" scopus_id={author_scopus_id}"
+        elif given_name and surname:
+            query += f" given_name=\"{given_name}\" and surname=\"{surname}\""
+        else:
+            raise ValueError("Did not receive valid input! ")
+
+        return pd.read_sql_query(query, self.conn)
+
+    def get_papers_by_author(self, author_scopus_id: int, min_year: int = None, max_year: int = None) -> pd.DataFrame:
+        query = (f"select scopus_id, title, date from "
+                 f"papers join written_by wb on papers.scopus_id = wb.paper "
+                 f"where wb.author={author_scopus_id}")
+
+        if min_year:
+            query += f" and CAST(substr(date,1,4) as integer) > {min_year}"
+        if max_year:
+            query += f" and CAST(substr(date,1,4) as integer) < {max_year}"
+
+        query += " order by date desc"
+
+        return pd.read_sql_query(query, self.conn)
+
+    def get_authors_by_paper(self, paper_scopus_id: int) -> tuple:
+        return tuple(
+            pd.read_sql_query(f"select author from written_by where paper={paper_scopus_id}", self.conn)["author"]
+            .tolist())
