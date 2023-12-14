@@ -7,7 +7,7 @@ from elsapy.elssearch import ElsSearch
 from .. import constants as const
 from .paper import paper_df_from_db_entry, get_papers_from_doc_list, get_papers_from_author_by_scopus_search, \
     save_paper_to_db
-from ..util.commandline_util import log_and_print_if_verbose
+from ..util.commandline_util import log_and_print_if_verbose, select_from_author_names_list
 
 
 def _extract_names_from_full_name(full_name: str, full_name_format: str) -> (str, str):
@@ -36,14 +36,13 @@ class Author:
         self._els_client = client
         self.output_format = output_format
 
+        self.author_name_guesses = None
+
         if full_name and not (given_name and surname):
             self.given_name, self.surname = _extract_names_from_full_name(full_name, input_format)
 
         self.scopus_id = scopus_id or self._get_scopus_id_by_name()
         self._scopus_author = ElsAuthor(author_id=self.scopus_id)
-
-        if not (given_name and surname):
-            self.given_name, self.surname = self._get_author_name_by_scopus_id()
 
         if const.db_manager.find_author(self.scopus_id):
             log_and_print_if_verbose(f"Found: {self.scopus_id} in db, loading papers", verbose)
@@ -52,7 +51,7 @@ class Author:
             latest_update_year = int(const.db_manager.get_papers_by_author(self.scopus_id)["date"][0][:4])
             local_papers = const.db_manager.get_papers_by_author(self.scopus_id, max_year=latest_update_year).apply(
                 paper_df_from_db_entry, axis=1)
-            new_papers = get_papers_from_author_by_scopus_search(
+            new_papers, _ = get_papers_from_author_by_scopus_search(
                 self._els_client,
                 self.scopus_id,
                 max_year=latest_update_year
@@ -74,9 +73,13 @@ class Author:
                     f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...",
                     verbose)
                 # trying to extract paper information without using the authors index
-                self.papers = get_papers_from_author_by_scopus_search(self._els_client, self.scopus_id)
+                self.papers, self.author_name_guesses = (
+                    get_papers_from_author_by_scopus_search(self._els_client, self.scopus_id))
                 if self.papers.empty:
                     raise ValueError("Could not find author papers, please check your api key permissions")
+
+        if not (given_name and surname):
+            self.given_name, self.surname = self._get_author_name_by_scopus_id()
 
         self.key = self._get_key()
         self._save_to_db()
@@ -127,9 +130,11 @@ class Author:
 
         if not self._scopus_author.read(self._els_client):
             log_and_print_if_verbose("Could not find author names, using empty placeholder", self.verbose)
-            return "", ""
-            # TODO add option to either throw error or continue without name
-            # raise ValueError("Could not find author names, please check your api key permissions")
+
+            if self.author_name_guesses:
+                return select_from_author_names_list(self.author_name_guesses)
+            else:
+                return "", ""
 
         log_and_print_if_verbose(
             f"first name: {self._scopus_author.first_name}, last name: {self._scopus_author.last_name}", self.verbose)

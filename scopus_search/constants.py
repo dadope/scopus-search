@@ -16,7 +16,7 @@ DEFAULT_OUTPUT_FILETYPE = "json"
 DEFAULT_NAME_INPUT_FORMAT = "{surname}, {given_name}"
 DEFAULT_NAME_OUTPUT_FORMAT = "{surname}, {given_name}"
 
-SCOPUS_SEARCH_KEYS = ["dc:identifier", "dc:title", "prism:coverDate"]
+SCOPUS_SEARCH_KEYS = ["dc:identifier", "dc:title", "prism:coverDate", "dc:creator"]
 
 if _config_file.exists():
     with open(str(_config_file)) as file:
@@ -33,7 +33,7 @@ else:
 
     CONFIG = {}
 
-API_KEY = CONFIG["api_key"] if "api_key" in CONFIG else None
+API_KEY = CONFIG["apikey"] if "apikey" in CONFIG else None
 DB_PATH = CONFIG["db_path"] if "db_path" in CONFIG else str(_default_db_path)
 
 db_manager = DbManager(DB_PATH)

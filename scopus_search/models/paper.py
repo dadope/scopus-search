@@ -7,15 +7,17 @@ from elsapy.elssearch import ElsSearch
 from .. import constants as const
 
 
-def get_authors_by_paper_df(df: pd.DataFrame, els_client: ElsClient) -> tuple:
-    if const.db_manager.find_paper(df.scopus_id):
-        return const.db_manager.get_authors_by_paper(df.scopus_id)
+def get_authors_by_paper_df(df: pd.DataFrame, els_client: ElsClient, author_scopus_id: int) -> tuple:
+    db_authors = const.db_manager.get_authors_by_paper(df.scopus_id)
+    if db_authors:
+        return db_authors
 
     doc = AbsDoc(scp_id=df.scopus_id)
     if doc.read(els_client) and "authors" in doc.data:
-        return tuple([int(author["@auid"]) for author in doc.data["authors"]["author"]])
+        return tuple([int(author["@auid"]) for author in doc.data["authors"]["author"]]) or tuple([author_scopus_id])
 
-    return ()  # we cant find paper authors without using the author index, so we keep the authors emtpy
+    # we cant find paper authors without using the author index, so we only include the author we know
+    return tuple([author_scopus_id])
 
 
 # searches the scopus index instead of the authors index, thus paper information might be limited
@@ -23,7 +25,7 @@ def get_papers_from_author_by_scopus_search(
         els_client: ElsClient,
         author_scopus_id: int,
         min_year: int = None,
-        max_year: int = None):
+        max_year: int = None) -> (pd.DataFrame, list):
     query = f"AU-ID({author_scopus_id})"
 
     if max_year:
@@ -37,6 +39,9 @@ def get_papers_from_author_by_scopus_search(
     if search.results and not ("error" in search.results[0].keys()):
         df = pd.DataFrame(search.results, columns=const.SCOPUS_SEARCH_KEYS)
 
+        author_guesses = set(df["dc:creator"].to_list())
+        df.drop(["dc:creator"], axis=1, inplace=True)
+
         df["from_db"] = False
         df["dc:identifier"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
         df.rename(columns={
@@ -45,9 +50,9 @@ def get_papers_from_author_by_scopus_search(
             "dc:title": "title",
         }, inplace=True)
 
-        df["authors"] = df.apply(lambda paper: get_authors_by_paper_df(paper, els_client), axis=1)
+        df["authors"] = df.apply(lambda paper: get_authors_by_paper_df(paper, els_client, author_scopus_id), axis=1)
 
-        return df.sort_values(by=['date'])
+        return df.sort_values(by=['date']), author_guesses
 
     return pd.DataFrame()
 
