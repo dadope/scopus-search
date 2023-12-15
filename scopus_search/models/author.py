@@ -41,7 +41,7 @@ class Author:
             f"Initializing Author...", self.verbose)
 
         if full_name and not (given_name and surname):
-            log_and_print_if_verbose(f"Extracting given- and surname from {given_name}", verbose)
+            log_and_print_if_verbose(f"Extracting given- and surname from {full_name}", verbose)
             self.given_name, self.surname = _extract_names_from_full_name(full_name, input_format)
             log_and_print_if_verbose(f"Extracted given name: {self.given_name} and surname: {self.surname}", verbose)
 
@@ -78,7 +78,7 @@ class Author:
                 if self.papers.empty:
                     raise ValueError("Could not find author papers, please check your api key permissions")
 
-        if not (given_name and surname):
+        if not (self.given_name and self.surname):
             self.given_name, self.surname = self._get_author_name_by_scopus_id()
 
         self.output_key = self._get_output_key()

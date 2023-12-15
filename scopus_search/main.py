@@ -23,10 +23,10 @@ parser.add_argument("--min_year", action="store", type=int, help="Filters papers
 # TODO: add option to resolve author scopus id for name filtering
 parser.add_argument("--must_include_authors", action="store", nargs="+", type=int,
                     help="Only papers with one or more of the given authors will be taken into account")
-parser.add_argument("--must_include_all_authors", action="store", nargs="+", type=int,
-                    help="Only papers with all the given authors will be taken into account")
 parser.add_argument("--must_not_include_authors", action="store", nargs="+", type=int,
                     help="Only papers without all of the given authors will be taken into account")
+parser.add_argument("--must_include_all_authors", action="store", nargs="+", type=int,
+                    help="Only papers with all the given authors will be taken into account")
 
 args, author_data = parser.parse_known_args()
 
