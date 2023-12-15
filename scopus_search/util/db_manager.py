@@ -57,6 +57,23 @@ class DbManager:
         self.cursor.execute("insert or replace into papers values (?,?,?)", [scopus_id, title, date])
         self.conn.commit()
 
+    def save_papers_df(self, papers_df: pd.DataFrame):
+        # only save papers that aren't already in the db
+        papers_df = papers_df[papers_df.from_db == False]
+
+        authors_df = papers_df[["scopus_id", "authors"]].explode("authors")
+        authors_df.rename(
+            columns={
+                "authors": "author",
+                "scopus_id": "paper"
+            }, inplace=True)
+        authors_df.to_sql("written_by", self.conn, if_exists="append", index=False)
+
+        papers_df = papers_df[["scopus_id", "title", "date"]]
+        papers_df.to_sql("papers", self.conn, if_exists="append", index=False)
+
+        self.conn.commit()
+
     def find_author(self, author_scopus_id: int):
         return not self.get_author(author_scopus_id=author_scopus_id).empty
 
@@ -74,7 +91,7 @@ class DbManager:
         elif given_name and surname:
             query += f" given_name=\"{given_name}\" and surname=\"{surname}\""
         else:
-            raise ValueError("Did not receive valid input! ")
+            raise ValueError("Did not receive valid input!")
 
         return pd.read_sql_query(query, self.conn)
 

@@ -40,9 +40,10 @@ def get_papers_from_author_by_scopus_search(
         df = pd.DataFrame(search.results, columns=const.SCOPUS_SEARCH_KEYS)
 
         author_guesses = set(df["dc:creator"].to_list())
-        df.drop(["dc:creator"], axis=1, inplace=True)
 
-        df["from_db"] = False
+        if "dc:creator" not in const.SCOPUS_SEARCH_KEYS:
+            df.drop(["dc:creator"], axis=1, inplace=True)
+
         df["dc:identifier"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
         df.rename(columns={
             "dc:identifier": "scopus_id",
@@ -50,11 +51,14 @@ def get_papers_from_author_by_scopus_search(
             "dc:title": "title",
         }, inplace=True)
 
+        df["from_db"] = df.apply(
+            lambda paper: not const.db_manager.find_paper(paper.scopus_id), axis=1)
+
         df["authors"] = df.apply(lambda paper: get_authors_by_paper_df(paper, els_client, author_scopus_id), axis=1)
 
         return df.sort_values(by=['date']), author_guesses
 
-    return pd.DataFrame()
+    return pd.DataFrame(), []
 
 
 def paper_df_from_db_entry(df: pd.DataFrame) -> pd.DataFrame:
@@ -76,11 +80,3 @@ def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
         "prism:coverDate": "date",
         "dc:title": "title",
     })
-
-
-def save_paper_to_db(paper: pd.Series):
-    if not paper.from_db:
-        const.db_manager.insert_paper(paper.scopus_id, paper.title, paper.date)
-        for author in paper.authors:
-            const.db_manager.insert_written_by(author, paper.scopus_id)
-    return paper

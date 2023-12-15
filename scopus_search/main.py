@@ -20,6 +20,7 @@ parser.add_argument("--output_name_format", action="store", type=str, help="Defi
 parser.add_argument("--max_year", action="store", type=int, help="Filters papers by year (upper bound)")
 parser.add_argument("--min_year", action="store", type=int, help="Filters papers by year (lower bound)")
 
+# TODO: add option to resolve author scopus id for name filtering
 parser.add_argument("--must_include_authors", action="store", nargs="+", type=int,
                     help="Only papers with one or more of the given authors will be taken into account")
 parser.add_argument("--must_include_all_authors", action="store", nargs="+", type=int,

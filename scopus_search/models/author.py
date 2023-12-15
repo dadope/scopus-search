@@ -5,9 +5,8 @@ from elsapy.elsprofile import ElsAuthor
 from elsapy.elssearch import ElsSearch
 
 from .. import constants as const
-from .paper import paper_df_from_db_entry, get_papers_from_doc_list, get_papers_from_author_by_scopus_search, \
-    save_paper_to_db
 from ..util.commandline_util import log_and_print_if_verbose, select_from_author_names_list
+from .paper import paper_df_from_db_entry, get_papers_from_doc_list, get_papers_from_author_by_scopus_search
 
 
 def _extract_names_from_full_name(full_name: str, full_name_format: str) -> (str, str):
@@ -38,8 +37,13 @@ class Author:
 
         self.author_name_guesses = None
 
+        log_and_print_if_verbose(f"-------------------------------------------------------------------------------------------------\n"
+            f"Initializing Author...", self.verbose)
+
         if full_name and not (given_name and surname):
+            log_and_print_if_verbose(f"Extracting given- and surname from {given_name}", verbose)
             self.given_name, self.surname = _extract_names_from_full_name(full_name, input_format)
+            log_and_print_if_verbose(f"Extracted given name: {self.given_name} and surname: {self.surname}", verbose)
 
         self.scopus_id = scopus_id or self._get_scopus_id_by_name()
         self._scopus_author = ElsAuthor(author_id=self.scopus_id)
@@ -57,21 +61,17 @@ class Author:
                 max_year=latest_update_year
             )
 
-            log_and_print_if_verbose(
-                f"Loaded {len(local_papers)} from database, updated / downloaded {len(new_papers)} papers from scopus",
-                verbose)
+            log_and_print_if_verbose(f"Loaded {len(local_papers)} from database, updated / downloaded {len(new_papers)} papers from scopus", verbose)
 
             self.papers = pd.concat([new_papers, local_papers], ignore_index=True)
 
         else:
+            log_and_print_if_verbose(f"Downloading paper list for {self.scopus_id}, this might take a while", verbose)
             if self._scopus_author.read_docs(self._els_client):
-                log_and_print_if_verbose(
-                    f"Downloading paper list for {self.scopus_id}... this might take a while", verbose)
+                log_and_print_if_verbose(f"Downloaded paper list!", verbose)
                 self.papers = get_papers_from_doc_list(self._scopus_author.doc_list)
             else:
-                log_and_print_if_verbose(
-                    f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...",
-                    verbose)
+                log_and_print_if_verbose(f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...", verbose)
                 # trying to extract paper information without using the authors index
                 self.papers, self.author_name_guesses = (
                     get_papers_from_author_by_scopus_search(self._els_client, self.scopus_id))
@@ -81,15 +81,15 @@ class Author:
         if not (given_name and surname):
             self.given_name, self.surname = self._get_author_name_by_scopus_id()
 
-        self.key = self._get_key()
+        self.output_key = self._get_output_key()
         self._save_to_db()
 
     def _save_to_db(self):
-        log_and_print_if_verbose(f"Saving author: {self.scopus_id} and papers to database..", self.verbose)
+        log_and_print_if_verbose(f"Saving author: {self.scopus_id} and papers to database...", self.verbose)
         const.db_manager.insert_author(self.scopus_id, self.given_name, self.surname)
-        self.papers.apply(save_paper_to_db, axis=1)
+        const.db_manager.save_papers_df(self.papers)
 
-    def _get_key(self) -> str:
+    def _get_output_key(self) -> str:
         try:
             return self.output_format.format(**dict(
                 scopus_id=self.scopus_id,

@@ -7,7 +7,7 @@ from ..models.author import Author
 # TODO: implement optional sorting by different values
 def _get_json_output(authors: list[Author]):
     return {
-        author.key: author.papers.sort_values(by=['date'], ascending=False).apply(
+        author.output_key: author.papers.sort_values(by=['date'], ascending=False).apply(
             lambda paper: {
                 "scopus_id": paper.scopus_id,
                 "title": paper.title,
