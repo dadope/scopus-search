@@ -34,6 +34,7 @@ class Author:
         self.verbose = verbose
         self._els_client = client
         self.output_format = output_format
+        self.given_name, self.surname = given_name, surname
 
         self.author_name_guesses = None
 
@@ -109,7 +110,11 @@ class Author:
 
         query = f"AUTHFIRST({self.given_name}) AND AUTHLASTNAME({self.surname})"
         search = ElsSearch(query, index="author")
-        search.execute(self._els_client)
+
+        try:
+            search.execute(self._els_client)
+        except Exception as e:
+            raise ValueError("Could not find author scopus id, please check your api key permissions")
 
         if not search.results or "error" in search.results[0].keys():
             raise ValueError("Could not find author scopus id, please check your api key permissions")

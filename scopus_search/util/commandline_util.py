@@ -8,18 +8,20 @@ def log_and_print_if_verbose(message, verbose):
 
 
 def select_from_author_names_list(author_names_list):
+    author_names_list = list(author_names_list)
     author_names_list.append("Other, input name...")
 
-    index = questionary.select(
+
+    choice = questionary.select(
         "Select",
         choices=author_names_list
     ).ask()
 
-    if index == len(author_names_list) - 1:
-        return input("Input the name of the author: ")
+    if choice == "Other, input name...":
+        choice = input("Input the name of the author: ")
 
     try:
-        name = author_names_list[index].rsplit(" ", 1)
+        name = choice.rsplit(" ", 1)
         return name[0], name[1]
     except Exception as e:
-        return author_names_list[index]
+        return choice, " "
