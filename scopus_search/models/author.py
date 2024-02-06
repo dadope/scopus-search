@@ -4,9 +4,9 @@ from elsapy.elsclient import ElsClient
 from elsapy.elsprofile import ElsAuthor
 from elsapy.elssearch import ElsSearch
 
+from .scopus_author import ScopusAuthor
+from ..util.commandline_util import log_and_print_if_verbose
 from .. import constants as const
-from ..util.commandline_util import log_and_print_if_verbose, select_from_author_names_list
-from .paper import paper_df_from_db_entry, get_papers_from_doc_list, get_papers_from_author_by_scopus_search
 
 
 def _extract_names_from_full_name(full_name: str, full_name_format: str) -> (str, str):
@@ -24,126 +24,32 @@ class Author:
                  scopus_id: int = None,
                  full_name: str = None,
                  given_name: str = None,
-                 input_format: str = const.DEFAULT_NAME_INPUT_FORMAT,
-                 output_format: str = const.DEFAULT_NAME_OUTPUT_FORMAT,
-                 verbose: bool = False):
+                 scopus_ids_to_exclude: list = None,
+                 verbose: bool = False, ask_user_input: bool = False,
+                 input_format: str = const.DEFAULT_NAME_INPUT_FORMAT, output_format: str = const.DEFAULT_NAME_OUTPUT_FORMAT):
+        self.verbose = verbose
+        self.output_format = output_format
+        self.ask_user_input = ask_user_input
+        self._els_client = client
+        self._ids_to_exclude = scopus_ids_to_exclude or []
 
         if not (scopus_id or full_name or (given_name and surname)):
             raise ValueError("Did not receive scopus id or full name or first and last names of the author")
 
-        self.verbose = verbose
-        self._els_client = client
-        self.output_format = output_format
-        self.given_name, self.surname = given_name, surname
-
-        self.author_name_guesses = None
-
-        log_and_print_if_verbose(f"-------------------------------------------------------------------------------------------------\n"
-            f"Initializing Author...", self.verbose)
-
-        if full_name and not (given_name and surname):
-            log_and_print_if_verbose(f"Extracting given- and surname from {full_name}", verbose)
-            self.given_name, self.surname = _extract_names_from_full_name(full_name, input_format)
-            log_and_print_if_verbose(f"Extracted given name: {self.given_name} and surname: {self.surname}", verbose)
-
-        self.scopus_id = scopus_id or self._get_scopus_id_by_name()
-        self._scopus_author = ElsAuthor(author_id=self.scopus_id)
-
-        if const.db_manager.find_author(self.scopus_id):
-            log_and_print_if_verbose(f"Found: {self.scopus_id} in db, loading papers", verbose)
-
-            # we sort the papers, so the first entry is always the latest
-            latest_update_year = int(const.db_manager.get_papers_by_author(self.scopus_id)["date"][0][:4])
-            local_papers = const.db_manager.get_papers_by_author(self.scopus_id, max_year=latest_update_year).apply(
-                paper_df_from_db_entry, axis=1)
-            new_papers, _ = get_papers_from_author_by_scopus_search(
-                self._els_client,
-                self.scopus_id,
-                max_year=latest_update_year
-            )
-
-            log_and_print_if_verbose(f"Loaded {len(local_papers)} from database, updated / downloaded {len(new_papers)} papers from scopus", verbose)
-
-            self.papers = pd.concat([new_papers, local_papers], ignore_index=True)
-
+        if scopus_id:
+            self.scopus_authors = [
+                ScopusAuthor(client, scopus_id, output_format=output_format, verbose=verbose, ask_user_input=ask_user_input)]
         else:
-            log_and_print_if_verbose(f"Downloading paper list for {self.scopus_id}, this might take a while", verbose)
-            if self._scopus_author.read_docs(self._els_client):
-                log_and_print_if_verbose(f"Downloaded paper list!", verbose)
-                self.papers = get_papers_from_doc_list(self._scopus_author.doc_list)
-            else:
-                log_and_print_if_verbose(f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...", verbose)
-                # trying to extract paper information without using the authors index
-                self.papers, self.author_name_guesses = (
-                    get_papers_from_author_by_scopus_search(self._els_client, self.scopus_id))
-                if self.papers.empty:
-                    raise ValueError("Could not find author papers, please check your api key permissions")
+            if full_name:
+                given_name, surname = _extract_names_from_full_name(full_name, input_format)
 
-        if not (self.given_name and self.surname):
-            self.given_name, self.surname = self._get_author_name_by_scopus_id()
+            self.scopus_authors = self._get_scopus_authors_by_name(given_name, surname)
 
-        self.output_key = self._get_output_key()
+            if len(self.scopus_authors) < 1:
+                raise ValueError("Could not find any authors or excluded too many!")
+
+        self.base_author = self.scopus_authors[0]
         self._save_to_db()
-
-    def _save_to_db(self):
-        log_and_print_if_verbose(f"Saving author: {self.scopus_id} and papers to database...", self.verbose)
-        const.db_manager.insert_author(self.scopus_id, self.given_name, self.surname)
-        const.db_manager.save_papers_df(self.papers)
-
-    def _get_output_key(self) -> str:
-        try:
-            return self.output_format.format(**dict(
-                scopus_id=self.scopus_id,
-                given_name=self.given_name,
-                surname=self.surname
-            ))
-        except KeyError:
-            return const.DEFAULT_NAME_OUTPUT_FORMAT.format(**dict(given_name=self.given_name, surname=self.surname))
-
-    def _get_scopus_id_by_name(self):
-        log_and_print_if_verbose(
-            f"Finding scopus_id by first ({self.given_name}) and last ({self.surname}) name",
-            self.verbose)
-        author_info = const.db_manager.get_author(given_name=self.given_name, surname=self.surname)
-        if not author_info.empty:
-            return int(author_info.scopus_id[0])
-
-        query = f"AUTHFIRST({self.given_name}) AND AUTHLASTNAME({self.surname})"
-        search = ElsSearch(query, index="author")
-
-        try:
-            search.execute(self._els_client)
-        except Exception as e:
-            raise ValueError("Could not find author scopus id, please check your api key permissions")
-
-        if not search.results or "error" in search.results[0].keys():
-            raise ValueError("Could not find author scopus id, please check your api key permissions")
-
-        log_and_print_if_verbose(
-            f"Found {len(search.results)} entries, selecting best matching user...", self.verbose)
-
-        # TODO: consider multiple search entries
-        search_entry = search.results[0]
-
-        return int(search_entry["dc:identifier"].replace("AUTHOR_ID:", ""))
-
-    def _get_author_name_by_scopus_id(self):
-        log_and_print_if_verbose(f"Finding author first and last name by scopus_id ({self.scopus_id})", self.verbose)
-        author_info = const.db_manager.get_author(author_scopus_id=self.scopus_id)
-        if not author_info.empty:
-            return author_info.given_name[0], author_info.surname[0]
-
-        if not self._scopus_author.read(self._els_client):
-            log_and_print_if_verbose("Could not find author names, using empty placeholder", self.verbose)
-
-            if self.author_name_guesses:
-                return select_from_author_names_list(self.author_name_guesses)
-            else:
-                return "", ""
-
-        log_and_print_if_verbose(
-            f"first name: {self._scopus_author.first_name}, last name: {self._scopus_author.last_name}", self.verbose)
-        return self._scopus_author.first_name, self._scopus_author.last_name
 
     def filter_papers(self,
                       max_year: int = None,
@@ -151,26 +57,66 @@ class Author:
                       include_authors: list[int] = [],
                       include_all_authors: list[int] = [],
                       not_include_authors: list[int] = []):
+        for author in self.scopus_authors:
+            author.filter_papers(max_year, min_year, include_authors, include_all_authors, not_include_authors)
 
-        if max_year or min_year or include_authors or include_all_authors or not_include_authors:
-            log_and_print_if_verbose("Filtering papers...", self.verbose)
+    def _get_scopus_authors_by_name(self, given_name: str, surname: str) -> list[ScopusAuthor]:
+        log_and_print_if_verbose(
+            f"Finding scopus_id by first ({given_name}) and last ({surname}) name",
+            self.verbose)
 
-        if max_year:
-            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) < max_year]
+        if const.db_manager.find_author_by_name(given_name, surname):
+            return [
+                ScopusAuthor(
+                    client=self._els_client,
+                    scopus_id=author.scopus_id,
+                    given_name=author.given_name,
+                    surname=author.surname,
+                    output_format=self.output_format, verbose=self.verbose, ask_user_input=self.ask_user_input
+                ) for author in const.db_manager.get_author_scopus_ids(
+                    int(const.db_manager.get_scopus_author(given_name=given_name, surname=surname)["scopus_id"][0])
+                ).itertuples() if author.scopus_id not in self._ids_to_exclude
+            ]
 
-        if min_year:
-            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) > min_year]
+        query = f"AUTHFIRST({given_name}) AND AUTHLASTNAME({surname})"
+        search = ElsSearch(query, index="author")
 
-        if not_include_authors:
-            self.papers = self.papers[self.papers.authors.apply(
-                lambda authors: not any(author in authors for author in not_include_authors))]
+        try:
+            search.execute(self._els_client)
+        except Exception:
+            # TODO: consider workaround thorough the scopus api
+            # query = f"AUTHOR-NAME({self.surname}, {self.given_name[:1]})"
+            # search = ElsSearch(query, index="scopus")
+            # try:
+            #    search.execute(self._els_client)
+            # except Exception as e:
+            #    raise ValueError("Could not find author scopus id, please check your api key permissions")
+            raise ValueError("Could not find author scopus id, please check your api key permissions")
 
-        if include_authors:
-            self.papers = self.papers[self.papers.authors.apply(
-                lambda authors: any(author in authors for author in include_authors))]
+        if not getattr(search, "results") or "error" in search.results[0].keys():
+            raise ValueError("Could not find author scopus id, please check your api key permissions")
 
-        if include_all_authors:
-            self.papers = self.papers[self.papers.authors.apply(
-                lambda authors: set(include_all_authors) <= set(authors))]
+        log_and_print_if_verbose(f"Found {len(search.results)} entries!", self.verbose)
 
-        return self.papers
+        return [
+            ScopusAuthor(
+                self._els_client,
+                scopus_id=scopus_id,
+                output_format=self.output_format, verbose=self.verbose, ask_user_input=self.ask_user_input)
+            for scopus_id in [int(entry["dc:identifier"].replace("AUTHOR_ID:", "")) for entry in search.results]
+        ]
+
+    def _save_to_db(self):
+        log_and_print_if_verbose(f"Saving author: {self.base_author.scopus_id} and papers to database...", self.verbose)
+        for author in self.scopus_authors:
+            if not const.db_manager.find_author(author.scopus_id):
+                base_id = None if author is self.base_author \
+                    else self.base_author.scopus_id
+
+                const.db_manager.insert_scopus_author(
+                    base_id=base_id,
+                    given_name=author.given_name,
+                    surname=author.surname,
+                    scopus_id=author.scopus_id)
+
+            const.db_manager.insert_paper_df(author.papers)

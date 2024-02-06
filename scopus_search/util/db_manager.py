@@ -1,14 +1,19 @@
 import sqlite3
+from datetime import datetime
+
 import pandas as pd
 
 _CREATE_AUTHORS_QUERY = """
 create table if not exists authors
 (
-    scopus_id  integer not null
+    scopus_id integer not null
         constraint authors_pk
             primary key,
     given_name TEXT,
-    surname  TEXT
+    surname TEXT,
+    base_id INTEGER DEFAULT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );"""
 
 _CREATE_PAPERS_QUERY = """
@@ -17,22 +22,26 @@ create table if not exists papers
     scopus_id integer
         constraint papers_pk
             primary key,
-    title     TEXT,
-    date      TEXT
+    title      TEXT,
+    date       TEXT,
+    origin     TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
 
 _CREATE_WRITTEN_BY_QUERY = """
 create table if not exists written_by
 (
-    author integer
+    author integer not null
         constraint written_by_authors_scopus_id_fk
             references authors,
-    paper  integer
+    paper  integer not null
         constraint written_by_papers_scopus_id_fk
             references papers
 );"""
 
+_CREATE_WRITTEN_BY_IDX_QUERY = "CREATE UNIQUE INDEX IF NOT EXISTS written_by_uniq ON written_by (author, paper);"
 
 class DbManager:
     def __init__(self, db_path: str):
@@ -44,22 +53,30 @@ class DbManager:
         self.cursor.execute(_CREATE_PAPERS_QUERY)
         self.cursor.execute(_CREATE_AUTHORS_QUERY)
         self.cursor.execute(_CREATE_WRITTEN_BY_QUERY)
+        self.cursor.execute(_CREATE_WRITTEN_BY_IDX_QUERY)
 
-    def insert_author(self, scopus_id: int, given_name: str, surname: str):
-        self.cursor.execute("insert or replace into authors values (?,?,?)", (scopus_id, given_name, surname))
+    def insert_scopus_author(self, scopus_id, given_name, surname, base_id: int = None):
+        self.cursor.execute("insert into authors (base_id, scopus_id, given_name, surname, updated_at) "
+                            "values (?,?,?,?, current_timestamp) on conflict do nothing",
+                            [base_id, scopus_id, given_name, surname])
         self.conn.commit()
 
     def insert_written_by(self, author_id: int, paper_id: int):
-        self.cursor.execute("insert or replace into written_by values (?,?)", [author_id, paper_id])
+        self.cursor.execute("insert into written_by (author_id, paper_id) "
+                            "values (?,?) on conflict do nothing",
+                            [author_id, paper_id])
         self.conn.commit()
 
     def insert_paper(self, scopus_id: int, title: str, date: str):
-        self.cursor.execute("insert or replace into papers values (?,?,?)", [scopus_id, title, date])
+        self.cursor.execute("insert into papers (scopus_id, title, date, updated_at) "
+                            "values (?,?,?, current_timestamp) on conflict do nothing",
+                            [scopus_id, title, date])
         self.conn.commit()
 
-    def save_papers_df(self, papers_df: pd.DataFrame):
-        # only save papers that aren't already in the db
-        papers_df = papers_df[papers_df.from_db == False]
+    def insert_paper_df(self, papers_df: pd.DataFrame):
+        papers_df["in_db"] = papers_df["scopus_id"].apply(self.find_paper)
+        papers_df = papers_df[papers_df["in_db"] == False]
+        papers_df = papers_df.drop_duplicates(subset="scopus_id")
 
         authors_df = papers_df[["scopus_id", "authors"]].explode("authors")
         authors_df.rename(
@@ -67,27 +84,38 @@ class DbManager:
                 "authors": "author",
                 "scopus_id": "paper"
             }, inplace=True)
+        authors_df.drop_duplicates(inplace=True)
         authors_df.to_sql("written_by", self.conn, if_exists="append", index=False)
 
-        papers_df = papers_df[["scopus_id", "title", "date"]]
+        papers_df = papers_df[["scopus_id", "title", "date", "origin"]]
+        # TODO fix timezone difference
+        papers_df["updated_at"] = str(datetime.utcnow())
         papers_df.to_sql("papers", self.conn, if_exists="append", index=False)
 
         self.conn.commit()
 
+    def is_base_author(self, scopus_id: int) -> bool:
+        author = self.get_scopus_author(scopus_id=scopus_id)
+        return (author["base_id"][0] is not None) if not author.empty \
+            else False
+
+    def find_author_by_name(self, given_name: str, surname: str):
+        return not self.get_scopus_author(given_name=given_name, surname=surname).empty
+
     def find_author(self, author_scopus_id: int):
-        return not self.get_author(author_scopus_id=author_scopus_id).empty
+        return not self.get_scopus_author(scopus_id=author_scopus_id).empty
 
     def find_paper(self, paper_scopus_id: int):
-        return self.get_paper(paper_scopus_id).empty
+        return not self.get_paper(paper_scopus_id).empty
 
     def get_paper(self, paper_scopus_id: int) -> pd.DataFrame:
         return pd.read_sql_query(f"select * from papers where scopus_id={paper_scopus_id}", self.conn)
 
-    def get_author(self, author_scopus_id: int = None, given_name: str = None, surname: str = None) -> pd.DataFrame:
+    def get_scopus_author(self, scopus_id: int = None, given_name: str = None, surname: str = None) -> pd.DataFrame:
         query = "select * from authors where"
 
-        if author_scopus_id:
-            query += f" scopus_id={author_scopus_id}"
+        if scopus_id:
+            query += f" scopus_id={scopus_id}"
         elif given_name and surname:
             query += f" given_name=\"{given_name}\" and surname=\"{surname}\""
         else:
@@ -95,21 +123,33 @@ class DbManager:
 
         return pd.read_sql_query(query, self.conn)
 
-    def get_papers_by_author(self, author_scopus_id: int, min_year: int = None, max_year: int = None) -> pd.DataFrame:
-        query = (f"select scopus_id, title, date from "
-                 f"papers join written_by wb on papers.scopus_id = wb.paper "
-                 f"where wb.author={author_scopus_id}")
+    def get_author_scopus_ids(self, scopus_id: int) -> pd.DataFrame:
+        base_id = self.get_scopus_author(scopus_id=scopus_id)["base_id"][0] or scopus_id
+        return pd.read_sql_query(
+            f"select scopus_id, given_name, surname from authors "
+            f"where (base_id={base_id}) or (scopus_id={base_id}) order by base_id nulls first",
+            self.conn)
+
+    def get_last_updated_paper(self, author_scopus_id: int):
+        return pd.read_sql_query(f"select date from papers left join written_by on papers.scopus_id = written_by.paper "
+                                   f"where written_by.author = {author_scopus_id} order by date desc limit 1", self.conn)
+
+    def get_papers_by_scopus_author(self, author_scopus_id: int, min_year: int = None, max_year: int = None) -> pd.DataFrame:
+        query = ("select scopus_id, title, date, origin from papers "
+                 "left join written_by on papers.scopus_id = written_by.paper "
+                 f"where written_by.author = {author_scopus_id}")
 
         if min_year:
-            query += f" and CAST(substr(date,1,4) as integer) > {min_year}"
+            query += f" and CAST(strftime('%Y', date) as integer) >= {min_year}"
         if max_year:
-            query += f" and CAST(substr(date,1,4) as integer) < {max_year}"
+            query += f" and CAST(strftime('%Y', date) as integer) < {max_year}"
 
         query += " order by date desc"
 
         return pd.read_sql_query(query, self.conn)
 
-    def get_authors_by_paper(self, paper_scopus_id: int) -> tuple:
+    def get_paper_authors(self, paper_scopus_id: int) -> tuple:
         return tuple(
             pd.read_sql_query(f"select author from written_by where paper={paper_scopus_id}", self.conn)["author"]
             .tolist())
+    

@@ -1,5 +1,8 @@
+from operator import itemgetter
+
 import numpy as np
 import pandas as pd
+from itertools import groupby
 from elsapy.elsdoc import AbsDoc
 from elsapy.elsclient import ElsClient
 from elsapy.elssearch import ElsSearch
@@ -7,8 +10,8 @@ from elsapy.elssearch import ElsSearch
 from .. import constants as const
 
 
-def get_authors_by_paper_df(df: pd.DataFrame, els_client: ElsClient, author_scopus_id: int) -> tuple:
-    db_authors = const.db_manager.get_authors_by_paper(df.scopus_id)
+def get_paper_authors(df: pd.DataFrame, els_client: ElsClient, author_scopus_id: int) -> tuple:
+    db_authors = const.db_manager.get_paper_authors(df.scopus_id)
     if db_authors:
         return db_authors
 
@@ -39,10 +42,9 @@ def get_papers_from_author_by_scopus_search(
     if search.results and not ("error" in search.results[0].keys()):
         df = pd.DataFrame(search.results, columns=const.SCOPUS_SEARCH_KEYS)
 
-        author_guesses = set(df["dc:creator"].to_list())
-
-        if "dc:creator" not in const.SCOPUS_SEARCH_KEYS:
-            df.drop(["dc:creator"], axis=1, inplace=True)
+        author_guesses = [(uniq, len(list(dups))) for uniq, dups in groupby(sorted(df["dc:creator"].to_list()))]
+        author_guesses.sort(key=itemgetter(1), reverse=True)
+        author_guesses = [f"[{count}] {name}" for name, count in author_guesses]
 
         df["dc:identifier"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
         df.rename(columns={
@@ -52,9 +54,9 @@ def get_papers_from_author_by_scopus_search(
         }, inplace=True)
 
         df["from_db"] = df.apply(
-            lambda paper: not const.db_manager.find_paper(paper.scopus_id), axis=1)
+            lambda paper: const.db_manager.find_paper(paper.scopus_id), axis=1)
 
-        df["authors"] = df.apply(lambda paper: get_authors_by_paper_df(paper, els_client, author_scopus_id), axis=1)
+        df["authors"] = df.apply(lambda paper: get_paper_authors(paper, els_client, author_scopus_id), axis=1)
 
         return df.sort_values(by=['date']), author_guesses
 
@@ -62,21 +64,23 @@ def get_papers_from_author_by_scopus_search(
 
 
 def paper_df_from_db_entry(df: pd.DataFrame) -> pd.DataFrame:
-    df["authors"] = const.db_manager.get_authors_by_paper(df["scopus_id"])
+    df["authors"] = const.db_manager.get_paper_authors(df["scopus_id"])
     df["from_db"] = True
-    return df
+    return df[["authors","scopus_id", "date", "title", "origin", "from_db"]]
 
 
 def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
     df = pd.DataFrame(doc_list)
 
     df["from_db"] = False
-    df["dc:identifier"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
+    df["origin"] = "authors_api"
+    df["scopus_id"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
     df["authors"] = df["authors"].apply(
         lambda authors: tuple(int(author["authid"]) for author in authors["author"]))
 
-    return df.rename(columns={
-        "dc:identifier": "scopus_id",
+    df = df.rename(columns={
         "prism:coverDate": "date",
         "dc:title": "title",
     })
+
+    return df[["scopus_id", "date", "title", "origin", "authors", "from_db"]]

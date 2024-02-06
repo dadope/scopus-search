@@ -1,4 +1,5 @@
 import json
+from enum import Enum
 from pathlib import Path
 
 from .util.db_manager import DbManager
@@ -12,7 +13,7 @@ _default_db_path = _resources_dir / "database.db"
 project_data_dir.mkdir(exist_ok=True)
 _resources_dir.mkdir(exist_ok=True)
 
-DEFAULT_OUTPUT_FILETYPE = "json"
+DEFAULT_OUTPUT_FORMAT = "json"
 DEFAULT_NAME_INPUT_FORMAT = "{surname}, {given_name}"
 DEFAULT_NAME_OUTPUT_FORMAT = "{surname}, {given_name}"
 
@@ -24,7 +25,7 @@ if _config_file.exists():
         file.close()
 else:
     _default_settings = {
-        "api_key": "<api key>"
+        "apikey": "<api key>"
     }
 
     with open(str(_config_file), "w") as file:
