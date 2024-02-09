@@ -5,6 +5,7 @@ from elsapy.elsclient import ElsClient
 from . import constants
 from .models.author import Author
 from .util.data_manager import DataManager, OutputFormats
+from .util.commandline_util import log_and_print_if_verbose
 
 parser = argparse.ArgumentParser(
     prog="scopus-search",
@@ -55,18 +56,25 @@ def main():
     els_client = ElsClient(api_key)
     els_client.local_dir = constants.project_data_dir
     if all(author.isnumeric() for author in author_data):
+        log_and_print_if_verbose(f"Received author scopus ids: {author_data}", args.verbose)
         for author_id in author_data:
-            authors.append(Author(
-                els_client,
-                verbose=args.verbose,
-                ask_user_input=args.no_input,
-                scopus_id=int(author_id),
-                output_format=output_name_format
-            ))
+            try:
+                authors.append(Author(
+                    els_client,
+                    verbose=args.verbose,
+                    ask_user_input=args.no_input,
+                    scopus_id=int(author_id),
+                    output_format=output_name_format,
+                    scopus_ids_to_exclude = args.exclude_scopus_ids
+                ))
+            except Exception as e:
+                log_and_print_if_verbose(f"Error!, ran into exception:\n {e} \nwhile working on author: {author_id}\ncontinuing to next entry\n\n", args.verbose)
     else:
         authors_names = set([name.lower() for name in author_data])
+        log_and_print_if_verbose(f"Received author names: {authors_names}", args.verbose)
         for author_name in authors_names:
-            authors.append(Author(
+            try:
+                authors.append(Author(
                 els_client,
                 verbose=args.verbose,
                 ask_user_input=args.no_input,
@@ -74,7 +82,9 @@ def main():
                 input_format=input_name_format,
                 output_format=output_name_format,
                 scopus_ids_to_exclude=args.exclude_scopus_ids
-            ))
+                ))
+            except Exception as e:
+                log_and_print_if_verbose(f"Error!, ran into exception:\n {e} \nwhile working on author: {author_name}\ncontinuing to next entry\n\n", args.verbose)
 
     data_manager = DataManager(authors, output_formatter=output_formatter)
 

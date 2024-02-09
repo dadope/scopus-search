@@ -12,7 +12,8 @@ class ScopusAuthor:
     def __init__(self,
                  client: ElsClient,
                  scopus_id: int, given_name: str = None, surname: str = None,
-                 verbose: bool = False, ask_user_input: bool = False, output_format: str = const.DEFAULT_NAME_OUTPUT_FORMAT):
+                 verbose: bool = False, ask_user_input: bool = False,
+                 output_format: str = const.DEFAULT_NAME_OUTPUT_FORMAT):
 
         if not scopus_id:
             raise ValueError("Did not receive scopus id")
@@ -26,6 +27,9 @@ class ScopusAuthor:
         self.in_db = const.db_manager.find_author(scopus_id)
         self._scopus_author = ElsAuthor(author_id=self.scopus_id)
 
+        if self.in_db:
+            self._db_author = const.db_manager.get_scopus_author(scopus_id=scopus_id)
+
         if not self.in_db:
             if self._scopus_author.read(self._els_client):
                 log_and_print_if_verbose(
@@ -38,7 +42,9 @@ class ScopusAuthor:
                 log_and_print_if_verbose(f"Downloaded paper list!", verbose)
                 self.papers = get_papers_from_doc_list(self._scopus_author.doc_list)
             else:
-                log_and_print_if_verbose(f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...", verbose)
+                log_and_print_if_verbose(
+                    f"Could not download doc list for {self.scopus_id} from scopus! downloading papers through the search api...",
+                    verbose)
                 # trying to extract paper information without using the authors index
                 self.papers, self.author_name_guesses = (
                     get_papers_from_author_by_scopus_search(self._els_client, self.scopus_id))
@@ -46,9 +52,12 @@ class ScopusAuthor:
                     raise ValueError("Could not find author papers, please check your api key permissions")
 
         else:
+            surname = self._db_author["surname"][0]
+            given_name = self._db_author["given_name"][0]
             last_updated_paper = const.db_manager.get_last_updated_paper(self.scopus_id)
             if last_updated_paper.empty:
-                raise ValueError(f"Could not find any paper in database for author {self.scopus_id}, this should never happen!")
+                raise ValueError(
+                    f"Could not find any paper in database for author {self.scopus_id}, this should never happen!")
             latest_update_year = int(last_updated_paper["date"][0][:4])
             local_papers = const.db_manager.get_papers_by_scopus_author(self.scopus_id, max_year=latest_update_year).apply(
                 paper_df_from_db_entry, axis=1)
@@ -82,10 +91,6 @@ class ScopusAuthor:
                       include_authors: list[int] = [],
                       include_all_authors: list[int] = [],
                       not_include_authors: list[int] = []):
-
-        if max_year or min_year or include_authors or include_all_authors or not_include_authors:
-            log_and_print_if_verbose("Filtering papers...", self.verbose)
-
         if max_year:
             self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) < max_year]
 

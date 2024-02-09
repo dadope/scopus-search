@@ -58,7 +58,7 @@ def get_papers_from_author_by_scopus_search(
 
         df["authors"] = df.apply(lambda paper: get_paper_authors(paper, els_client, author_scopus_id), axis=1)
 
-        return df.sort_values(by=['date']), author_guesses
+        return df[["scopus_id", "title", "date", "from_db", "authors"]].sort_values(by=['date']), author_guesses
 
     return pd.DataFrame(), []
 

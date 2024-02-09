@@ -58,6 +58,10 @@ class Author:
                       include_all_authors: list[int] = [],
                       not_include_authors: list[int] = []):
         for author in self.scopus_authors:
+            if max_year or min_year or include_authors or include_all_authors or not_include_authors:
+                log_and_print_if_verbose(
+                    f"Filtering papers for author: {author.given_name} {author.surname}({author.scopus_id})",
+                    self.verbose)
             author.filter_papers(max_year, min_year, include_authors, include_all_authors, not_include_authors)
 
     def _get_scopus_authors_by_name(self, given_name: str, surname: str) -> list[ScopusAuthor]:
@@ -96,7 +100,11 @@ class Author:
         if not getattr(search, "results") or "error" in search.results[0].keys():
             raise ValueError("Could not find author scopus id, please check your api key permissions")
 
-        log_and_print_if_verbose(f"Found {len(search.results)} entries!", self.verbose)
+        if len(search.results) == 1:
+            scopus_id = search.results[0]["dc:identifier"].replace("AUTHOR_ID:", "")
+            log_and_print_if_verbose(f"Found one exact match for author: {given_name} {surname} -> {scopus_id}", self.verbose)
+        else:
+            log_and_print_if_verbose(f"Found multiple matches for author: {given_name} {surname}, downloading all of them...", self.verbose)
 
         return [
             ScopusAuthor(
@@ -107,7 +115,7 @@ class Author:
         ]
 
     def _save_to_db(self):
-        log_and_print_if_verbose(f"Saving author: {self.base_author.scopus_id} and papers to database...", self.verbose)
+        log_and_print_if_verbose(f"Saving author: {self.base_author.given_name} {self.base_author.surname} ({self.base_author.scopus_id}) and papers to database...\n", self.verbose)
         for author in self.scopus_authors:
             if not const.db_manager.find_author(author.scopus_id):
                 base_id = None if author is self.base_author \
