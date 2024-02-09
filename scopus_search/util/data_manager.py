@@ -7,18 +7,30 @@ from ..models.author import Author
 # TODO: implement optional sorting by different values
 def _get_json_output(authors: list[Author]):
     return {
-        author.base_author.scopus_id: {
-            auth.scopus_id: auth.papers.sort_values(by=['date'], ascending=False).apply(
-                lambda paper: {
-                    "scopus_id": paper.scopus_id,
-                    "title": paper.title,
-                    "authors": paper.authors,
-                    "date": paper.date
-                }, axis=1
-            ).to_list()
-            for auth in author.scopus_authors
-        } for author in authors
+        author.base_author.scopus_id: _get_json_output_for_author(author)
+        for author in authors
     }
+
+
+def _get_json_output_for_author(author: Author):
+    if len(author.scopus_authors) == 1:
+        return _get_paper_list_from_df(author.scopus_authors[0].papers)
+
+    return {
+        auth.scopus_id: _get_paper_list_from_df(auth.papers)
+        for auth in author.scopus_authors
+    }
+
+
+def _get_paper_list_from_df(papers):
+    return papers.sort_values(by=['date'], ascending=False).apply(
+        lambda paper: {
+            "scopus_id": paper.scopus_id,
+            "title": paper.title,
+            "authors": paper.authors,
+            "date": paper.date
+        }, axis=1
+    ).to_list()
 
 
 # TODO: implement
@@ -27,13 +39,18 @@ def _get_markdown_output(authors: list[Author]):
 
 
 def _get_dataframe_output(authors: list[Author]):
-    return [author.papers for author in authors]
+    return [{
+        auth.scopus_id: auth.papers[["scopus_id", "date", "title", "origin"]]
+        for auth in author.scopus_authors
+    } for author in authors]
 
 
 class OutputFormats(Enum):
     json = member(_get_json_output)
+    md = member(_get_markdown_output)
     markdown = member(_get_markdown_output)
     dataframe = member(_get_dataframe_output)
+    df = member(_get_dataframe_output)
 
 
 class DataManager:
