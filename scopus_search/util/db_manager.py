@@ -22,13 +22,30 @@ create table if not exists papers
     scopus_id integer
         constraint papers_pk
             primary key,
-    title      TEXT,
-    date       TEXT,
-    origin     TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    title       TEXT,
+    date        TEXT,
+    origin      TEXT,
+    affiliation TEXT,
+    page_range  TEXT,
+    issue_id    TEXT,
+    issn        TEXT,
+    isbn        TEXT,
+    eid         TEXT,
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
+
+_CREATE_AFFILIATIONS_QUERY = """
+create table if not exists affiliations
+(
+    afid integer
+        constraint papers_pk
+            primary key,
+    afilname  TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);"""
 
 _CREATE_WRITTEN_BY_QUERY = """
 create table if not exists written_by
@@ -36,8 +53,19 @@ create table if not exists written_by
     author integer not null
         constraint written_by_authors_scopus_id_fk
             references authors,
-    paper  integer not null
+    paper integer not null
         constraint written_by_papers_scopus_id_fk
+            references papers
+);"""
+
+_CREATE_AFFILIATED_TO_QUERY = """
+create table if not exists affiliated_to
+(
+    afil integer not null
+        constraint affiliated_to_affil_afid_fk
+            references affiliations,
+    paper integer not null
+        constraint affiliated_to_papers_scopus_id_fk
             references papers
 );"""
 
@@ -53,6 +81,8 @@ class DbManager:
         self.cursor.execute(_CREATE_PAPERS_QUERY)
         self.cursor.execute(_CREATE_AUTHORS_QUERY)
         self.cursor.execute(_CREATE_WRITTEN_BY_QUERY)
+        self.cursor.execute(_CREATE_AFFILIATIONS_QUERY)
+        self.cursor.execute(_CREATE_AFFILIATED_TO_QUERY)
         self.cursor.execute(_CREATE_WRITTEN_BY_IDX_QUERY)
 
     def insert_scopus_author(self, scopus_id, given_name, surname, base_id: int = None):
@@ -61,21 +91,9 @@ class DbManager:
                             [base_id, scopus_id, given_name, surname])
         self.conn.commit()
 
-    def insert_written_by(self, author_id: int, paper_id: int):
-        self.cursor.execute("insert into written_by (author_id, paper_id) "
-                            "values (?,?) on conflict do nothing",
-                            [author_id, paper_id])
-        self.conn.commit()
-
-    def insert_paper(self, scopus_id: int, title: str, date: str):
-        self.cursor.execute("insert into papers (scopus_id, title, date, updated_at) "
-                            "values (?,?,?, current_timestamp) on conflict do nothing",
-                            [scopus_id, title, date])
-        self.conn.commit()
-
     def insert_paper_df(self, papers_df: pd.DataFrame):
-        papers_df["in_db"] = papers_df["scopus_id"].apply(self.find_paper)
-        papers_df = papers_df[papers_df["in_db"] == False]
+        papers_df["from_db"] = papers_df.apply(lambda paper: self.find_paper(paper.scopus_id), axis=1)
+        papers_df = papers_df[papers_df["from_db"] == False]
         papers_df = papers_df.drop_duplicates(subset="scopus_id")
 
         authors_df = papers_df[["scopus_id", "authors"]].explode("authors")
@@ -87,9 +105,38 @@ class DbManager:
         authors_df.drop_duplicates(inplace=True)
         authors_df.to_sql("written_by", self.conn, if_exists="append", index=False)
 
-        papers_df = papers_df[["scopus_id", "title", "date", "origin"]]
+        def extract_afilname(affiliation):
+            affiliation["afilname"] = affiliation["afil_dict"][affiliation["afid"]]
+            return affiliation[["afid", "afilname"]]
+
+        affiliations = papers_df[["scopus_id", "affiliation"]]
+        affiliations["afil_dict"] = affiliations["affiliation"]
+
+        affiliations = affiliations.explode("affiliation")
+        affiliations.rename(columns={"affiliation": "afid"}, inplace=True)
+
+        affiliated_to = affiliations[["scopus_id", "afid"]]
+
+        affiliations = affiliations.apply(extract_afilname, axis=1)
+        affiliations = affiliations.drop_duplicates()
+
+        affiliations = affiliations[affiliations.apply(lambda affiliation: self.find_afil(affiliation["afid"]), axis=1) == False]
+
+        affiliations["updated_at"] = str(datetime.utcnow())
+        affiliations.to_sql("affiliations", self.conn, if_exists="append", index=False)
+
+        affiliated_to.rename(columns={
+            "scopus_id": "paper",
+            "afid": "afil"
+        }, inplace=True)
+
+        affiliated_to.to_sql("affiliated_to", self.conn, if_exists="append", index=False)
+
+        papers_df = papers_df[["scopus_id", "title", "date", "origin", "page_range", "issue_id", "issn", "isbn", "eid"]]
+
         # TODO fix timezone difference
-        papers_df["updated_at"] = str(datetime.utcnow())
+        update_time = str(datetime.utcnow())
+        papers_df["updated_at"] = update_time
         papers_df.to_sql("papers", self.conn, if_exists="append", index=False)
 
         self.conn.commit()
@@ -107,6 +154,9 @@ class DbManager:
 
     def find_paper(self, paper_scopus_id: int):
         return not self.get_paper(paper_scopus_id).empty
+
+    def find_afil(self, afid: int):
+        return not self.get_afil(afid).empty
 
     def get_paper(self, paper_scopus_id: int) -> pd.DataFrame:
         return pd.read_sql_query(f"select * from papers where scopus_id={paper_scopus_id}", self.conn)
@@ -152,4 +202,7 @@ class DbManager:
         return tuple(
             pd.read_sql_query(f"select author from written_by where paper={paper_scopus_id}", self.conn)["author"]
             .tolist())
+
+    def get_afil(self, afid):
+        return pd.read_sql_query(f"select * from affiliations where afid={afid}", self.conn)
     

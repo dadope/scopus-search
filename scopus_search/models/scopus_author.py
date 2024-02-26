@@ -97,10 +97,10 @@ class ScopusAuthor:
                       include_all_authors: list[int] = [],
                       not_include_authors: list[int] = []):
         if max_year:
-            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) < max_year]
+            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) <= max_year]
 
         if min_year:
-            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) > min_year]
+            self.papers = self.papers.loc[self.papers.date.map(lambda date: int(date[:4])) >= min_year]
 
         if not_include_authors:
             self.papers = self.papers[self.papers.authors.apply(

@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    version='0.1',
+    version='0.2',
     name='scopus_search',
     python_requires='>=3.11',
 

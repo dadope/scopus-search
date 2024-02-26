@@ -17,8 +17,6 @@ DEFAULT_OUTPUT_FORMAT = "json"
 DEFAULT_NAME_INPUT_FORMAT = "{surname}, {given_name}"
 DEFAULT_NAME_OUTPUT_FORMAT = "{surname}, {given_name}"
 
-SCOPUS_SEARCH_KEYS = ["dc:identifier", "dc:title", "prism:coverDate", "dc:creator"]
-
 if _config_file.exists():
     with open(str(_config_file)) as file:
         CONFIG = json.load(file)
