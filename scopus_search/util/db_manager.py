@@ -114,6 +114,7 @@ class DbManager:
         affiliations = affiliations.explode("affiliation")
         affiliations.rename(columns={"affiliation": "afid"}, inplace=True)
 
+        affiliations = affiliations.dropna()
         affiliated_to = affiliations[["scopus_id", "afid"]].copy()
 
         affiliations = affiliations.apply(extract_afilname, axis=1)
@@ -154,6 +155,8 @@ class DbManager:
         return not self.get_paper(paper_scopus_id).empty
 
     def find_afil(self, afid: int):
+        if not afid:
+            return True
         return not self.get_afil(afid).empty
 
     def get_paper(self, paper_scopus_id: int) -> pd.DataFrame:

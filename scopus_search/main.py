@@ -1,4 +1,5 @@
 import argparse
+import traceback
 
 from elsapy.elsclient import ElsClient
 
@@ -68,7 +69,7 @@ def main():
                     scopus_ids_to_exclude = args.exclude_scopus_ids
                 ))
             except Exception as e:
-                log_and_print_if_verbose(f"Error!, ran into exception:\n {e} \nwhile working on author: {author_id}\ncontinuing to next entry\n\n", args.verbose)
+                log_and_print_if_verbose(f"Error!, ran into exception:\n {traceback.format_exc()} \nwhile working on author: {author_id}\ncontinuing to next entry\n\n", args.verbose)
     else:
         authors_names = set([name.lower() for name in author_data])
         log_and_print_if_verbose(f"Received author names: {authors_names}", args.verbose)
@@ -84,7 +85,7 @@ def main():
                 scopus_ids_to_exclude=args.exclude_scopus_ids
                 ))
             except Exception as e:
-                log_and_print_if_verbose(f"Error!, ran into exception:\n {e} \nwhile working on author: {author_name}\ncontinuing to next entry\n\n", args.verbose)
+                log_and_print_if_verbose(f"Error!, ran into exception:\n {traceback.format_exc()} \nwhile working on author: {author_name}\ncontinuing to next entry\n\n", args.verbose)
 
     data_manager = DataManager(authors, output_formatter=output_formatter)
 

@@ -82,6 +82,16 @@ def paper_df_from_db_entry(df: pd.DataFrame) -> pd.DataFrame:
     df["from_db"] = True
     return df[DB_COLUMNS]
 
+def clean_affiliations(affiliations):
+    if type(affiliations) is not list:
+        return None
+
+    affil_dic = {}
+    for affil in affiliations:
+        if affil["afid"] and affil["afid"].isdigit():
+            affil_dic[int(affil["afid"])] = affil["affilname"]
+
+    return affil_dic or None
 
 def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
     df = pd.DataFrame(doc_list)
@@ -107,10 +117,6 @@ def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
         "prism:issueIdentifier": "issue_id",
     }, inplace=True)
 
-    print([[y.keys() for y in x] for x in df["affiliation"]])
-
-    df["affiliation"] = df["affiliation"].apply(
-        lambda affiliations: {int(affil["afid"]): affil["affilname"] for affil in affiliations}
-    )
+    df["affiliation"] = df["affiliation"].apply(clean_affiliations)
 
     return df[COLUMNS]
