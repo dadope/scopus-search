@@ -9,7 +9,8 @@ from elsapy.elssearch import ElsSearch
 
 from .. import constants as const
 
-COLUMNS = ["scopus_id", "date", "title", "origin", "authors", "from_db", "issn", "issue_id", "page_range", "affiliation", "eid", "isbn"]
+DB_COLUMNS = ["scopus_id", "date", "title", "origin", "authors", "from_db", "issn", "issue_id", "page_range", "eid", "isbn"]
+COLUMNS = DB_COLUMNS + ["affiliation"]
 
 def get_paper_authors(df: pd.DataFrame, els_client: ElsClient, author_scopus_id: int) -> tuple:
     db_authors = const.db_manager.get_paper_authors(df.scopus_id)
@@ -47,18 +48,29 @@ def get_papers_from_author_by_scopus_search(
         author_guesses.sort(key=itemgetter(1), reverse=True)
         author_guesses = [f"[{count}] {name}" for name, count in author_guesses]
 
-        df["dc:identifier"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
+        df["origin"] = "search_api"
+        df["scopus_id"] = df["dc:identifier"].str.replace("SCOPUS_ID:", "").astype(np.int64)
+
+        necessary_columns = [
+            "dc:title", "eid", "affiliation",
+            "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn"]
+        df = df.reindex(df.columns.union(necessary_columns, sort=False), axis=1, fill_value=None)
+
         df.rename(columns={
-            "dc:identifier": "scopus_id",
-            "prism:coverDate": "date",
             "dc:title": "title",
+            "prism:issn": "issn",
+            "prism:isbn": "isbn",
+            "prism:coverDate": "date",
+            "prism:pageRange": "page_range",
+            "prism:issueIdentifier": "issue_id",
         }, inplace=True)
+
+        print(df.columns)
 
         df["from_db"] = df.apply(
             lambda paper: const.db_manager.find_paper(paper.scopus_id), axis=1)
 
         df["authors"] = df.apply(lambda paper: get_paper_authors(paper, els_client, author_scopus_id), axis=1)
-        df["origin"] = "search_api"
 
         return df[COLUMNS].sort_values(by=['date']), author_guesses
 
@@ -68,7 +80,7 @@ def get_papers_from_author_by_scopus_search(
 def paper_df_from_db_entry(df: pd.DataFrame) -> pd.DataFrame:
     df["authors"] = const.db_manager.get_paper_authors(df["scopus_id"])
     df["from_db"] = True
-    return df[COLUMNS]
+    return df[DB_COLUMNS]
 
 
 def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
@@ -82,18 +94,18 @@ def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
 
     necessary_columns = [
         "dc:title", "eid", "affiliation",
-        "prism:coverDate", "prism:pageRange", "prism:coverDate", "prism:issueIdentifier", "prism:issn", "prism:isbn"]
+        "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn"]
 
     df = df.reindex(df.columns.union(necessary_columns, sort=False), axis=1, fill_value=None)
 
-    df = df.rename(columns={
+    df.rename(columns={
         "dc:title": "title",
         "prism:issn": "issn",
         "prism:isbn": "isbn",
         "prism:coverDate": "date",
         "prism:pageRange": "page_range",
         "prism:issueIdentifier": "issue_id",
-    })
+    }, inplace=True)
 
     print([[y.keys() for y in x] for x in df["affiliation"]])
 

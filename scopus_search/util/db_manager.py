@@ -40,8 +40,7 @@ _CREATE_AFFILIATIONS_QUERY = """
 create table if not exists affiliations
 (
     afid integer
-        constraint papers_pk
-            primary key,
+        constraint papers_pk,
     afilname  TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -109,16 +108,15 @@ class DbManager:
             affiliation["afilname"] = affiliation["afil_dict"][affiliation["afid"]]
             return affiliation[["afid", "afilname"]]
 
-        affiliations = papers_df[["scopus_id", "affiliation"]]
+        affiliations = papers_df[["scopus_id", "affiliation"]].copy()
         affiliations["afil_dict"] = affiliations["affiliation"]
 
         affiliations = affiliations.explode("affiliation")
         affiliations.rename(columns={"affiliation": "afid"}, inplace=True)
 
-        affiliated_to = affiliations[["scopus_id", "afid"]]
+        affiliated_to = affiliations[["scopus_id", "afid"]].copy()
 
         affiliations = affiliations.apply(extract_afilname, axis=1)
-        affiliations = affiliations.drop_duplicates()
 
         affiliations = affiliations[affiliations.apply(lambda affiliation: self.find_afil(affiliation["afid"]), axis=1) == False]
 
@@ -182,10 +180,10 @@ class DbManager:
 
     def get_last_updated_paper(self, author_scopus_id: int):
         return pd.read_sql_query(f"select date from papers left join written_by on papers.scopus_id = written_by.paper "
-                                   f"where written_by.author = {author_scopus_id} order by date desc limit 1", self.conn)
+                                 f"where written_by.author = {author_scopus_id} order by date desc limit 1", self.conn)
 
     def get_papers_by_scopus_author(self, author_scopus_id: int, min_year: int = None, max_year: int = None) -> pd.DataFrame:
-        query = ("select scopus_id, title, date, origin from papers "
+        query = ("select * from papers "
                  "left join written_by on papers.scopus_id = written_by.paper "
                  f"where written_by.author = {author_scopus_id}")
 
@@ -205,4 +203,3 @@ class DbManager:
 
     def get_afil(self, afid):
         return pd.read_sql_query(f"select * from affiliations where afid={afid}", self.conn)
-    
