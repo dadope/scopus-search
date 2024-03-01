@@ -22,17 +22,18 @@ create table if not exists papers
     scopus_id integer
         constraint papers_pk
             primary key,
-    title       TEXT,
-    date        TEXT,
-    origin      TEXT,
-    affiliation TEXT,
-    page_range  TEXT,
-    issue_id    TEXT,
-    issn        TEXT,
-    isbn        TEXT,
-    eid         TEXT,
-    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    title            TEXT,
+    date             TEXT,
+    origin           TEXT,
+    affiliation      TEXT,
+    page_range       TEXT,
+    issue_id         TEXT,
+    issn             TEXT,
+    isbn             TEXT,
+    eid              TEXT,
+    publication_name TEXT,
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
 

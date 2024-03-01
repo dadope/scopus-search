@@ -9,7 +9,7 @@ from elsapy.elssearch import ElsSearch
 
 from .. import constants as const
 
-DB_COLUMNS = ["scopus_id", "date", "title", "origin", "authors", "from_db", "issn", "issue_id", "page_range", "eid", "isbn"]
+DB_COLUMNS = ["scopus_id", "date", "title", "origin", "authors", "from_db", "issn", "issue_id", "page_range", "eid", "isbn", "publication_name"]
 COLUMNS = DB_COLUMNS + ["affiliation"]
 
 def get_paper_authors(df: pd.DataFrame, els_client: ElsClient, author_scopus_id: int) -> tuple:
@@ -53,7 +53,7 @@ def get_papers_from_author_by_scopus_search(
 
         necessary_columns = [
             "dc:title", "eid", "affiliation",
-            "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn"]
+            "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn", "prism:publicationName"]
         df = df.reindex(df.columns.union(necessary_columns, sort=False), axis=1, fill_value=None)
 
         df.rename(columns={
@@ -63,9 +63,8 @@ def get_papers_from_author_by_scopus_search(
             "prism:coverDate": "date",
             "prism:pageRange": "page_range",
             "prism:issueIdentifier": "issue_id",
+            "prism:publicationName": "publication_name"
         }, inplace=True)
-
-        print(df.columns)
 
         df["from_db"] = df.apply(
             lambda paper: const.db_manager.find_paper(paper.scopus_id), axis=1)
@@ -104,7 +103,7 @@ def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
 
     necessary_columns = [
         "dc:title", "eid", "affiliation",
-        "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn"]
+        "prism:coverDate", "prism:pageRange", "prism:issueIdentifier", "prism:issn", "prism:isbn", "prism:publicationName"]
 
     df = df.reindex(df.columns.union(necessary_columns, sort=False), axis=1, fill_value=None)
 
@@ -115,6 +114,7 @@ def get_papers_from_doc_list(doc_list: list) -> pd.DataFrame:
         "prism:coverDate": "date",
         "prism:pageRange": "page_range",
         "prism:issueIdentifier": "issue_id",
+        "prism:publicationName": "publication_name"
     }, inplace=True)
 
     df["affiliation"] = df["affiliation"].apply(clean_affiliations)
